@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- Open this file in a browser to download your PWA icons.
+     Right-click each canvas → Save image as… → save to public/ -->
+<html>
+<head><title>Icon Generator</title></head>
+<body style="background:#f3f4f6;font-family:sans-serif;padding:24px">
+  <h2>PWA Icon Generator</h2>
+  <p>Right-click each icon → <strong>Save image as…</strong> → save to the <code>public/</code> folder.</p>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+    <div><canvas id="c192" width="192" height="192"></canvas><br><small>pwa-192x192.png</small></div>
+    <div><canvas id="c512" width="512" height="512"></canvas><br><small>pwa-512x512.png</small></div>
+    <div><canvas id="c180" width="180" height="180"></canvas><br><small>apple-touch-icon.png</small></div>
+  </div>
+  <script>
+  function draw(canvas) {
+    const size = canvas.width
+    const ctx = canvas.getContext('2d')
+    const s = size / 32
+    const r = size * 0.2
+
+    ctx.fillStyle = '#6366f1'
+    ctx.beginPath()
+    ctx.roundRect(0, 0, size, size, r)
+    ctx.fill()
+
+    // Mic body
+    ctx.fillStyle = 'white'
+    ctx.beginPath()
+    ctx.roundRect(12*s, 8*s, 8*s, 12*s, 4*s)
+    ctx.fill()
+
+    // Arc
+    ctx.strokeStyle = 'white'
+    ctx.lineWidth = 2*s
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.arc(16*s, 20*s, 6*s, 0, Math.PI)
+    ctx.stroke()
+
+    // Stem
+    ctx.beginPath()
+    ctx.moveTo(16*s, 26*s); ctx.lineTo(16*s, 23*s)
+    ctx.stroke()
+
+    // Base
+    ctx.beginPath()
+    ctx.moveTo(12*s, 26*s); ctx.lineTo(20*s, 26*s)
+    ctx.stroke()
+  }
+  ['c192','c512','c180'].forEach(id => draw(document.getElementById(id)))
+  </script>
+</body>
+</html>
