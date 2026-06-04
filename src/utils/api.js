@@ -11,7 +11,7 @@ function key(envName, settingName) {
 }
 
 // ---------------------------------------------------------------------------
-// Whisper transcription
+// Whisper transcription — called directly (OpenAI allows browser CORS)
 // ---------------------------------------------------------------------------
 export async function transcribeAudio(audioBlob) {
   const apiKey = key('VITE_OPENAI_API_KEY', 'openaiKey')
@@ -36,7 +36,7 @@ export async function transcribeAudio(audioBlob) {
 }
 
 // ---------------------------------------------------------------------------
-// Claude grammar feedback
+// Claude grammar feedback — routed via /api/grammar Vercel proxy
 // ---------------------------------------------------------------------------
 const GRAMMAR_SYSTEM = `You are a warm, encouraging English language tutor helping a native Spanish speaker improve their English.
 Analyze the text for grammar errors. Return ONLY a valid JSON object with this exact shape:
@@ -56,23 +56,16 @@ Analyze the text for grammar errors. Return ONLY a valid JSON object with this e
 If there are no errors return an empty errors array and a score of 100.`
 
 export async function analyzeGrammar(text, mode = 'casual') {
-  const apiKey = key('VITE_ANTHROPIC_API_KEY', 'anthropicKey')
-  if (!apiKey) throw new Error('Missing Anthropic API key — add it in Settings')
-
   const modeNote = {
-    casual: 'The user is practicing casual, everyday English.',
-    formal: 'The user is practicing formal or academic English. Apply stricter grammar standards.',
+    casual:  'The user is practicing casual, everyday English.',
+    formal:  'The user is practicing formal or academic English. Apply stricter grammar standards.',
     grammar: 'Focus exclusively on grammar accuracy. Be thorough and detailed.'
   }[mode] || ''
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  // Use server-side proxy to avoid CORS issues
+  const res = await fetch('/api/grammar', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-calls': 'true',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1024,
@@ -85,7 +78,7 @@ export async function analyzeGrammar(text, mode = 'casual') {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error?.message || `Claude API error ${res.status}`)
+    throw new Error(err.error?.message || err.error || `Grammar API error ${res.status}`)
   }
 
   const data = await res.json()
@@ -99,52 +92,35 @@ export async function analyzeGrammar(text, mode = 'casual') {
 }
 
 // ---------------------------------------------------------------------------
-// Azure Pronunciation Assessment
-// Converts audio to 16kHz mono WAV before sending — Azure requires PCM WAV.
+// Azure Pronunciation Assessment — routed via /api/pronunciation Vercel proxy
+// Converts audio to WAV PCM 16kHz first, then sends raw bytes to our proxy.
 // ---------------------------------------------------------------------------
 export async function assessPronunciation(audioBlob, referenceText) {
-  const cfg = getRuntimeConfig()
-  const azKey = key('VITE_AZURE_SPEECH_KEY', 'azureKey')
-  const region = import.meta.env.VITE_AZURE_SPEECH_REGION || cfg.azureRegion || 'eastus'
-  if (!azKey) throw new Error('Missing Azure Speech key — add it in Settings')
-
   // Convert to WAV PCM 16kHz mono (required by Azure)
   const wavBlob = await convertToWav(audioBlob)
+  const wavBuffer = await wavBlob.arrayBuffer()
 
-  // Base64-encode the pronunciation assessment config
-  const config = btoa(JSON.stringify({
-    ReferenceText: referenceText,
-    GradingSystem: 'HundredMark',
-    Granularity: 'Word',
-    EnableMiscue: true,
-  }))
-
-  const url = `https://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`
-
-  const res = await fetch(url, {
+  const params = new URLSearchParams({ referenceText })
+  const res = await fetch(`/api/pronunciation?${params}`, {
     method: 'POST',
-    headers: {
-      'Ocp-Apim-Subscription-Key': azKey,
-      'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
-      'Pronunciation-Assessment': config,
-    },
-    body: wavBlob,
+    headers: { 'Content-Type': 'audio/wav' },
+    body: wavBuffer,
   })
 
   if (!res.ok) {
-    const txt = await res.text().catch(() => '')
-    throw new Error(`Azure Speech error ${res.status}: ${txt}`)
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `Pronunciation API error ${res.status}`)
   }
 
   const data = await res.json()
-  const pa = data.NBest?.[0]?.PronunciationAssessment
+  const pa    = data.NBest?.[0]?.PronunciationAssessment
   const words = data.NBest?.[0]?.Words || []
 
   return {
-    accuracyScore:      Math.round(pa?.AccuracyScore ?? 0),
-    fluencyScore:       Math.round(pa?.FluencyScore ?? 0),
-    completenessScore:  Math.round(pa?.CompletenessScore ?? 0),
-    overallScore:       Math.round(pa?.PronScore ?? 0),
+    accuracyScore:     Math.round(pa?.AccuracyScore     ?? 0),
+    fluencyScore:      Math.round(pa?.FluencyScore      ?? 0),
+    completenessScore: Math.round(pa?.CompletenessScore ?? 0),
+    overallScore:      Math.round(pa?.PronScore         ?? 0),
     words: words.map(w => ({
       word:     w.Word,
       accuracy: Math.round(w.PronunciationAssessment?.AccuracyScore ?? 0),
