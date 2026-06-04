@@ -98,13 +98,12 @@ export async function analyzeGrammar(text, mode = 'casual') {
 export async function assessPronunciation(audioBlob, referenceText) {
   // Convert to WAV PCM 16kHz mono (required by Azure)
   const wavBlob = await convertToWav(audioBlob)
-  const wavBuffer = await wavBlob.arrayBuffer()
 
-  const params = new URLSearchParams({ referenceText })
+  const params = new URLSearchParams({ referenceText: encodeURIComponent(referenceText) })
   const res = await fetch(`/api/pronunciation?${params}`, {
     method: 'POST',
     headers: { 'Content-Type': 'audio/wav' },
-    body: wavBuffer,
+    body: wavBlob,
   })
 
   if (!res.ok) {

@@ -1,21 +1,23 @@
 // Vercel serverless function — proxies WAV audio to Azure Speech pronunciation assessment
-// Receives: multipart form with fields: audio (wav blob), referenceText, region
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const azureKey = process.env.VITE_AZURE_SPEECH_KEY
-  const region   = process.env.VITE_AZURE_SPEECH_REGION || 'eastus'
+  const region   = process.env.VITE_AZURE_SPEECH_REGION || 'centralus'
   if (!azureKey) return res.status(500).json({ error: 'Azure Speech key not configured on server' })
 
   try {
-    // req.body is a Buffer of the raw WAV bytes sent from the client
-    // referenceText and region are passed as query params
     const { referenceText } = req.query
-
     if (!referenceText) return res.status(400).json({ error: 'referenceText query param required' })
 
+    // req.body is a Buffer when bodyParser is disabled
+    const audioBuffer = req.body
+    if (!audioBuffer || audioBuffer.length === 0) {
+      return res.status(400).json({ error: 'No audio data received' })
+    }
+
     const config = Buffer.from(JSON.stringify({
-      ReferenceText: referenceText,
+      ReferenceText: decodeURIComponent(referenceText),
       GradingSystem: 'HundredMark',
       Granularity: 'Word',
       EnableMiscue: true,
@@ -30,7 +32,7 @@ export default async function handler(req, res) {
         'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
         'Pronunciation-Assessment': config,
       },
-      body: req.body,
+      body: audioBuffer,
     })
 
     const text = await response.text()
@@ -42,6 +44,10 @@ export default async function handler(req, res) {
   }
 }
 
+// Disable default body parser so we get raw Buffer for binary audio data
 export const config = {
-  api: { bodyParser: { sizeLimit: '5mb' } }
+  api: {
+    bodyParser: false,
+    sizeLimit: '5mb',
+  }
 }
