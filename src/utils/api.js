@@ -1,3 +1,5 @@
+import { convertToWav } from './audioUtils'
+
 // Read key from env var or from runtime settings saved by the Settings page
 function getRuntimeConfig() {
   try {
@@ -89,7 +91,6 @@ export async function analyzeGrammar(text, mode = 'casual') {
   const data = await res.json()
   const raw = data.content?.[0]?.text || '{}'
   try {
-    // Strip markdown fences if present
     const clean = raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim()
     return JSON.parse(clean)
   } catch {
@@ -99,16 +100,18 @@ export async function analyzeGrammar(text, mode = 'casual') {
 
 // ---------------------------------------------------------------------------
 // Azure Pronunciation Assessment
-// Azure requires the audio to be WAV; we do the conversion in the hook layer.
-// This helper wraps the Azure REST pronunciation assessment endpoint.
+// Converts audio to 16kHz mono WAV before sending — Azure requires PCM WAV.
 // ---------------------------------------------------------------------------
-export async function assessPronunciation(wavBlob, referenceText) {
+export async function assessPronunciation(audioBlob, referenceText) {
   const cfg = getRuntimeConfig()
   const azKey = key('VITE_AZURE_SPEECH_KEY', 'azureKey')
   const region = import.meta.env.VITE_AZURE_SPEECH_REGION || cfg.azureRegion || 'eastus'
   if (!azKey) throw new Error('Missing Azure Speech key — add it in Settings')
 
-  // Build pronunciation assessment config (base64-encoded JSON)
+  // Convert to WAV PCM 16kHz mono (required by Azure)
+  const wavBlob = await convertToWav(audioBlob)
+
+  // Base64-encode the pronunciation assessment config
   const config = btoa(JSON.stringify({
     ReferenceText: referenceText,
     GradingSystem: 'HundredMark',
