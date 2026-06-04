@@ -15,20 +15,17 @@ export default function PracticePage() {
   const recorder = useRecorder()
   const practice = usePractice()
 
-  const handleStopAndTranscribe = async () => {
-    recorder.stopRecording()
-    // Wait a tick for recorder.audioBlob to be set via onstop
-    setTimeout(async () => {
-      if (recorder.audioBlob) {
-        await practice.transcribe(recorder.audioBlob)
-      }
-    }, 300)
+  const handleStopAndTranscribe = () => {
+    // Pass a callback so we get the blob the moment onstop fires — no setTimeout race condition
+    recorder.stopRecording(async (blob) => {
+      await practice.transcribe(blob)
+    })
   }
 
-  // After recorder.audioBlob is set (onstop fires asynchronously),
-  // we rely on the step machine; transcribe is called right after stop.
   const handleAnalyze = () => {
-    practice.analyze(practice.transcript, recorder.audioBlob, mode)
+    // Use the ref so we always have the latest blob even across re-renders
+    const blob = recorder.audioBlobRef.current || recorder.audioBlob
+    practice.analyze(practice.transcript, blob, mode)
   }
 
   const handleReset = () => {
