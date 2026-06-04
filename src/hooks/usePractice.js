@@ -8,9 +8,11 @@ export function usePractice() {
   const [grammarFeedback, setGrammarFeedback] = useState(null)
   const [pronunciationResult, setPronunciationResult] = useState(null)
   const [error, setError] = useState(null)
+  const [apiErrors, setApiErrors] = useState([]) // visible per-API errors
 
   const transcribe = useCallback(async (audioBlob) => {
     setError(null)
+    setApiErrors([])
     setStep('transcribing')
     try {
       const text = await transcribeAudio(audioBlob)
@@ -24,27 +26,28 @@ export function usePractice() {
 
   const analyze = useCallback(async (text, audioBlob, mode) => {
     setError(null)
+    setApiErrors([])
     setStep('analyzing')
     try {
-      // Run grammar + pronunciation in parallel
+      const hasAzure = import.meta.env.VITE_AZURE_SPEECH_KEY ||
+        (() => { try { return JSON.parse(localStorage.getItem('ep_settings') || '{}').azureKey } catch { return '' } })()
+
       const [grammar, pronunciation] = await Promise.allSettled([
         analyzeGrammar(text, mode),
-        (() => {
-          try {
-            const cfg = JSON.parse(localStorage.getItem('ep_settings') || '{}')
-            const hasAzure = import.meta.env.VITE_AZURE_SPEECH_KEY || cfg.azureKey
-            return hasAzure ? assessPronunciation(audioBlob, text) : Promise.resolve(null)
-          } catch { return Promise.resolve(null) }
-        })(),
+        hasAzure ? assessPronunciation(audioBlob, text) : Promise.resolve(null),
       ])
 
+      const errors = []
       const gResult = grammar.status === 'fulfilled' ? grammar.value : null
       const pResult = pronunciation.status === 'fulfilled' ? pronunciation.value : null
 
+      if (grammar.status === 'rejected') errors.push(`Grammar: ${grammar.reason?.message || grammar.reason}`)
+      if (pronunciation.status === 'rejected') errors.push(`Pronunciation: ${pronunciation.reason?.message || pronunciation.reason}`)
+
       setGrammarFeedback(gResult)
       setPronunciationResult(pResult)
+      setApiErrors(errors)
 
-      // Persist session
       saveSession({
         transcript: text,
         mode,
@@ -66,7 +69,8 @@ export function usePractice() {
     setGrammarFeedback(null)
     setPronunciationResult(null)
     setError(null)
+    setApiErrors([])
   }, [])
 
-  return { step, transcript, setTranscript, grammarFeedback, pronunciationResult, error, transcribe, analyze, reset }
+  return { step, transcript, setTranscript, grammarFeedback, pronunciationResult, error, apiErrors, transcribe, analyze, reset }
 }

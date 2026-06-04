@@ -8,7 +8,7 @@ import PronunciationCard from '../components/PronunciationCard'
 import AudioPlayer from '../components/AudioPlayer'
 import { useRecorder } from '../hooks/useRecorder'
 import { usePractice } from '../hooks/usePractice'
-import { RotateCcw } from 'lucide-react'
+import { RotateCcw, AlertTriangle } from 'lucide-react'
 
 export default function PracticePage() {
   const [mode, setMode] = useState('casual')
@@ -16,14 +16,12 @@ export default function PracticePage() {
   const practice = usePractice()
 
   const handleStopAndTranscribe = () => {
-    // Pass a callback so we get the blob the moment onstop fires — no setTimeout race condition
     recorder.stopRecording(async (blob) => {
       await practice.transcribe(blob)
     })
   }
 
   const handleAnalyze = () => {
-    // Use the ref so we always have the latest blob even across re-renders
     const blob = recorder.audioBlobRef.current || recorder.audioBlob
     practice.analyze(practice.transcript, blob, mode)
   }
@@ -39,10 +37,7 @@ export default function PracticePage() {
     <div className="space-y-5">
       <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Practice</h1>
 
-      {/* Mode selector */}
       <ModeSelector mode={mode} onChange={setMode} />
-
-      {/* Topic prompt */}
       <TopicPrompt />
 
       {/* Record area */}
@@ -60,16 +55,12 @@ export default function PracticePage() {
               Transcribing audio…
             </p>
           )}
-          {recorder.error && (
-            <p className="text-sm text-red-500">{recorder.error}</p>
-          )}
-          {practice.error && (
-            <p className="text-sm text-red-500">{practice.error}</p>
-          )}
+          {recorder.error && <p className="text-sm text-red-500">{recorder.error}</p>}
+          {practice.error && <p className="text-sm text-red-500">{practice.error}</p>}
         </div>
       )}
 
-      {/* After recording: show audio playback + transcript editor */}
+      {/* Transcript editor */}
       {(practice.step === 'reviewing' || practice.step === 'analyzing') && (
         <>
           {recorder.audioUrl && <AudioPlayer src={recorder.audioUrl} />}
@@ -88,6 +79,19 @@ export default function PracticePage() {
         <>
           <GrammarCard feedback={practice.grammarFeedback} />
           <PronunciationCard result={practice.pronunciationResult} />
+
+          {/* Show any API errors clearly */}
+          {practice.apiErrors?.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 space-y-1">
+              <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-semibold text-sm">
+                <AlertTriangle size={15} />
+                Some features had errors:
+              </div>
+              {practice.apiErrors.map((e, i) => (
+                <p key={i} className="text-xs text-amber-700 dark:text-amber-300 pl-5">{e}</p>
+              ))}
+            </div>
+          )}
 
           <div className="text-center text-xs text-gray-400 dark:text-gray-500 pb-2">
             Original: <span className="italic">"{practice.transcript}"</span>
