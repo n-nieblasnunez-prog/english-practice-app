@@ -30,8 +30,13 @@ export default async function handler(req, res) {
     })
     // Standard base64 as required by Azure REST API
     const config = Buffer.from(configJson).toString('base64')
-    console.log('Pronunciation config:', configJson)
-    console.log('Reference text length:', truncatedRef.length)
+    // Verify WAV header
+    const sampleRate    = audioBuffer.length >= 28 ? audioBuffer.readUInt32LE(24) : 0
+    const bitsPerSample = audioBuffer.length >= 36 ? audioBuffer.readUInt16LE(34) : 0
+    const channels      = audioBuffer.length >= 24 ? audioBuffer.readUInt16LE(22) : 0
+    console.log(`WAV: ${sampleRate}Hz, ${bitsPerSample}bit, ${channels}ch, ${audioBuffer.length} bytes`)
+    console.log('Reference text:', truncatedRef)
+    console.log('Config JSON:', configJson)
 
     const url = `https://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`
 
