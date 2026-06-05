@@ -26,12 +26,12 @@ export default async function handler(req, res) {
       ReferenceText: truncatedRef,
       GradingSystem: 'HundredMark',
       Granularity: 'Word',
+      EnableMiscue: true,
     })
-    const config = Buffer.from(configJson)
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '')
+    // Standard base64 as required by Azure REST API
+    const config = Buffer.from(configJson).toString('base64')
+    console.log('Pronunciation config:', configJson)
+    console.log('Reference text length:', truncatedRef.length)
 
     const url = `https://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`
 
@@ -49,8 +49,10 @@ export default async function handler(req, res) {
     if (!response.ok) return res.status(response.status).json({ error: text })
 
     const result = JSON.parse(text)
-    // Log for debugging — will appear in Vercel function logs
-    console.log('Azure response:', JSON.stringify(result).slice(0, 300))
+    const pa = result.NBest?.[0]?.PronunciationAssessment
+    console.log('Azure RecognitionStatus:', result.RecognitionStatus)
+    console.log('Azure PronunciationAssessment:', JSON.stringify(pa))
+    console.log('Azure NBest[0] keys:', Object.keys(result.NBest?.[0] || {}).join(', '))
     console.log('Audio buffer size:', audioBuffer.length, 'bytes')
 
     return res.status(200).json(result)
