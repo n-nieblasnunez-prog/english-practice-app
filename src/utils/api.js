@@ -122,19 +122,13 @@ export async function assessPronunciation(audioBlob, referenceText) {
     throw new Error(err.error || `Pronunciation API error ${res.status}`)
   }
 
+  // SDK proxy returns scores already normalized
   const data = await res.json()
-  const pa    = data.NBest?.[0]?.PronunciationAssessment
-  const words = data.NBest?.[0]?.Words || []
-
   return {
-    accuracyScore:     Math.round(pa?.AccuracyScore     ?? 0),
-    fluencyScore:      Math.round(pa?.FluencyScore      ?? 0),
-    completenessScore: Math.round(pa?.CompletenessScore ?? 0),
-    overallScore:      Math.round(pa?.PronScore         ?? 0),
-    words: words.map(w => ({
-      word:     w.Word,
-      accuracy: Math.round(w.PronunciationAssessment?.AccuracyScore ?? 0),
-      error:    w.PronunciationAssessment?.ErrorType ?? 'None',
-    }))
+    overallScore:      data.overallScore      ?? 0,
+    accuracyScore:     data.accuracyScore     ?? 0,
+    fluencyScore:      data.fluencyScore      ?? 0,
+    completenessScore: data.completenessScore ?? 0,
+    words:             data.words             ?? [],
   }
 }

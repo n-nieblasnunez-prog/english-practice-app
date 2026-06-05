@@ -1,5 +1,6 @@
-// Vercel serverless function — proxies pronunciation assessment to Azure Speech
-// Audio is received as base64-encoded JSON to avoid binary streaming issues.
+// Vercel serverless function — uses Azure Speech SDK for full pronunciation assessment
+// including Fluency and Completeness scores (not available via REST API alone).
+import * as sdk from 'microsoft-cognitiveservices-speech-sdk'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -7,85 +8,75 @@ export default async function handler(req, res) {
   const azureKey = process.env.VITE_AZURE_SPEECH_KEY
   const region   = process.env.VITE_AZURE_SPEECH_REGION || 'centralus'
 
-  if (!azureKey) return res.status(500).json({ error: 'Azure Speech key not configured on server' })
+  if (!azureKey) return res.status(500).json({ error: 'Azure Speech key not configured' })
 
   try {
     const { audioBase64, referenceText } = req.body
+    if (!audioBase64)    return res.status(400).json({ error: 'No audio data received' })
+    if (!referenceText)  return res.status(400).json({ error: 'referenceText is required' })
 
-    if (!audioBase64) return res.status(400).json({ error: 'No audio data received' })
-    if (!referenceText) return res.status(400).json({ error: 'referenceText is required' })
-
-    // Azure has a ~400 character limit for reference text
+    const audioBuffer = Buffer.from(audioBase64, 'base64')
     const truncatedRef = referenceText.slice(0, 400)
 
-    // Decode base64 audio back to binary Buffer
-    const audioBuffer = Buffer.from(audioBase64, 'base64')
+    // --- Azure Speech SDK setup ---
+    const speechConfig = sdk.SpeechConfig.fromSubscription(azureKey, region)
+    speechConfig.speechRecognitionLanguage = 'en-US'
 
-    // Azure requires base64url encoding (RFC 4648) for the Pronunciation-Assessment header
-    const configJson = JSON.stringify({
-      ReferenceText: truncatedRef,
-      GradingSystem: 'HundredMark',
-      Granularity: 'Word',
-      EnableMiscue: true,
+    const pronunciationConfig = new sdk.PronunciationAssessmentConfig(
+      truncatedRef,
+      sdk.PronunciationAssessmentGradingSystem.HundredMark,
+      sdk.PronunciationAssessmentGranularity.Word,
+      true   // enableMiscue
+    )
+
+    // Feed WAV bytes via push stream
+    const pushStream = sdk.AudioInputStream.createPushStream()
+    // Write in chunks to avoid memory issues
+    const chunkSize = 32768
+    for (let i = 0; i < audioBuffer.length; i += chunkSize) {
+      pushStream.write(audioBuffer.slice(i, i + chunkSize))
+    }
+    pushStream.close()
+
+    const audioConfig  = sdk.AudioConfig.fromStreamInput(pushStream)
+    const recognizer   = new sdk.SpeechRecognizer(speechConfig, audioConfig)
+    pronunciationConfig.applyTo(recognizer)
+
+    // Run recognition and collect result
+    const result = await new Promise((resolve, reject) => {
+      recognizer.recognizeOnceAsync(
+        r  => { recognizer.close(); resolve(r) },
+        e  => { recognizer.close(); reject(new Error(e)) }
+      )
     })
-    // Standard base64 as required by Azure REST API
-    const config = Buffer.from(configJson).toString('base64')
-    // Verify WAV header
-    const sampleRate    = audioBuffer.length >= 28 ? audioBuffer.readUInt32LE(24) : 0
-    const bitsPerSample = audioBuffer.length >= 36 ? audioBuffer.readUInt16LE(34) : 0
-    const channels      = audioBuffer.length >= 24 ? audioBuffer.readUInt16LE(22) : 0
-    console.log(`WAV: ${sampleRate}Hz, ${bitsPerSample}bit, ${channels}ch, ${audioBuffer.length} bytes`)
-    console.log('Reference text:', truncatedRef)
-    console.log('Config JSON:', configJson)
 
-    const url = `https://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Ocp-Apim-Subscription-Key': azureKey,
-        'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
-        'Pronunciation-Assessment': config,
-      },
-      body: audioBuffer,
-    })
-
-    const text = await response.text()
-    if (!response.ok) return res.status(response.status).json({ error: text })
-
-    const result = JSON.parse(text)
-    const best = result.NBest?.[0] || {}
-    console.log('Azure RecognitionStatus:', result.RecognitionStatus)
-    console.log('Azure NBest[0] keys:', Object.keys(best).join(', '))
-    console.log('Scores — PronScore:', best.PronScore, 'AccuracyScore:', best.AccuracyScore, 'FluencyScore:', best.FluencyScore)
-
-    // Normalize response — Azure returns scores directly on NBest[0], not in a nested object
-    const normalized = {
-      RecognitionStatus: result.RecognitionStatus,
-      NBest: [{
-        PronunciationAssessment: {
-          PronScore:          best.PronScore          ?? best.AccuracyScore ?? 0,
-          AccuracyScore:      best.AccuracyScore      ?? 0,
-          FluencyScore:       best.FluencyScore       ?? 0,
-          CompletenessScore:  best.CompletenessScore  ?? 0,
-        },
-        Words: (best.Words || []).map(w => ({
-          Word:  w.Word,
-          PronunciationAssessment: {
-            AccuracyScore: w.AccuracyScore ?? 0,
-            ErrorType:     w.ErrorType    ?? 'None',
-          }
-        }))
-      }]
+    if (result.reason === sdk.ResultReason.Canceled) {
+      const cancellation = sdk.CancellationDetails.fromResult(result)
+      throw new Error(`Recognition canceled: ${cancellation.errorDetails}`)
     }
 
-    return res.status(200).json(normalized)
+    const pa    = sdk.PronunciationAssessmentResult.fromResult(result)
+    const words = pa.detailResult?.Words || []
+
+    console.log(`Pronunciation scores — Overall:${pa.pronunciationScore} Accuracy:${pa.accuracyScore} Fluency:${pa.fluencyScore} Completeness:${pa.completenessScore}`)
+
+    return res.status(200).json({
+      overallScore:      Math.round(pa.pronunciationScore  ?? 0),
+      accuracyScore:     Math.round(pa.accuracyScore       ?? 0),
+      fluencyScore:      Math.round(pa.fluencyScore        ?? 0),
+      completenessScore: Math.round(pa.completenessScore   ?? 0),
+      words: words.map(w => ({
+        word:     w.Word,
+        accuracy: Math.round(w.PronunciationAssessment?.AccuracyScore ?? 0),
+        error:    w.PronunciationAssessment?.ErrorType ?? 'None',
+      }))
+    })
   } catch (err) {
+    console.error('Pronunciation error:', err.message)
     return res.status(500).json({ error: err.message })
   }
 }
 
-// Keep default body parser ON so req.body is parsed as JSON
 export const config = {
   api: { bodyParser: { sizeLimit: '10mb' } }
 }
