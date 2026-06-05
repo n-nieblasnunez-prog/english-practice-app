@@ -15,12 +15,15 @@ export default async function handler(req, res) {
     if (!audioBase64) return res.status(400).json({ error: 'No audio data received' })
     if (!referenceText) return res.status(400).json({ error: 'referenceText is required' })
 
+    // Azure has a ~400 character limit for reference text
+    const truncatedRef = referenceText.slice(0, 400)
+
     // Decode base64 audio back to binary Buffer
     const audioBuffer = Buffer.from(audioBase64, 'base64')
 
     // Azure requires base64url encoding (RFC 4648) for the Pronunciation-Assessment header
     const configJson = JSON.stringify({
-      ReferenceText: referenceText,
+      ReferenceText: truncatedRef,
       GradingSystem: 'HundredMark',
       Granularity: 'Word',
     })
