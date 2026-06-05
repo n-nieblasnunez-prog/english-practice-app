@@ -7,6 +7,12 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ error: 'Anthropic API key not configured on server' })
 
   try {
+    // Override model to a known-good, widely available model
+    const body = {
+      ...req.body,
+      model: 'claude-3-haiku-20240307',
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -14,11 +20,14 @@ export default async function handler(req, res) {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(body),
     })
 
     const data = await response.json()
-    if (!response.ok) return res.status(response.status).json(data)
+    if (!response.ok) {
+      console.error('Anthropic error:', JSON.stringify(data))
+      return res.status(response.status).json({ error: data?.error?.message || JSON.stringify(data) })
+    }
     return res.status(200).json(data)
   } catch (err) {
     return res.status(500).json({ error: err.message })
