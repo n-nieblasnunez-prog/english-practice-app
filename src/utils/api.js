@@ -99,11 +99,14 @@ export async function assessPronunciation(audioBlob, referenceText) {
   // Convert to WAV PCM 16kHz mono (required by Azure)
   const wavBlob = await convertToWav(audioBlob)
 
-  const params = new URLSearchParams({ referenceText: encodeURIComponent(referenceText) })
-  const res = await fetch(`/api/pronunciation?${params}`, {
+  // Convert WAV to base64 so it survives JSON transport through the Vercel proxy
+  const wavBuffer = await wavBlob.arrayBuffer()
+  const audioBase64 = btoa(String.fromCharCode(...new Uint8Array(wavBuffer)))
+
+  const res = await fetch('/api/pronunciation', {
     method: 'POST',
-    headers: { 'Content-Type': 'audio/wav' },
-    body: wavBlob,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ audioBase64, referenceText }),
   })
 
   if (!res.ok) {

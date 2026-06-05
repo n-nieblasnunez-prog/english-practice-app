@@ -1,14 +1,5 @@
-// Vercel serverless function — proxies WAV audio to Azure Speech pronunciation assessment
-// bodyParser is disabled so we manually collect the raw binary stream.
-
-function collectBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = []
-    req.on('data', chunk => chunks.push(chunk))
-    req.on('end', () => resolve(Buffer.concat(chunks)))
-    req.on('error', reject)
-  })
-}
+// Vercel serverless function — proxies pronunciation assessment to Azure Speech
+// Audio is received as base64-encoded JSON to avoid binary streaming issues.
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -19,17 +10,16 @@ export default async function handler(req, res) {
   if (!azureKey) return res.status(500).json({ error: 'Azure Speech key not configured on server' })
 
   try {
-    const { referenceText } = req.query
-    if (!referenceText) return res.status(400).json({ error: 'referenceText query param required' })
+    const { audioBase64, referenceText } = req.body
 
-    // Manually read raw binary body (bodyParser is disabled)
-    const audioBuffer = await collectBody(req)
-    if (!audioBuffer || audioBuffer.length === 0) {
-      return res.status(400).json({ error: 'No audio data received' })
-    }
+    if (!audioBase64) return res.status(400).json({ error: 'No audio data received' })
+    if (!referenceText) return res.status(400).json({ error: 'referenceText is required' })
+
+    // Decode base64 audio back to binary Buffer
+    const audioBuffer = Buffer.from(audioBase64, 'base64')
 
     const config = Buffer.from(JSON.stringify({
-      ReferenceText: decodeURIComponent(referenceText),
+      ReferenceText: referenceText,
       GradingSystem: 'HundredMark',
       Granularity: 'Word',
       EnableMiscue: true,
@@ -56,7 +46,7 @@ export default async function handler(req, res) {
   }
 }
 
-// Disable default body parser — required to receive raw binary audio
+// Keep default body parser ON so req.body is parsed as JSON
 export const config = {
-  api: { bodyParser: false }
+  api: { bodyParser: { sizeLimit: '10mb' } }
 }
