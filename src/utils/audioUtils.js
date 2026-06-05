@@ -31,8 +31,6 @@ export async function convertToWav(audioBlob) {
     samples = resampled.getChannelData(0)
   }
 
-  console.log(`WAV conversion: ${decoded.sampleRate}Hz → ${TARGET_RATE}Hz, ${samples.length} samples`)
-
   // Build WAV file
   const numSamples = samples.length
   const buffer = new ArrayBuffer(44 + numSamples * 2)

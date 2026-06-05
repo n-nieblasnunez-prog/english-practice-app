@@ -58,8 +58,6 @@ export default async function handler(req, res) {
     const pa    = sdk.PronunciationAssessmentResult.fromResult(result)
     const words = pa.detailResult?.Words || []
 
-    console.log(`Pronunciation scores — Overall:${pa.pronunciationScore} Accuracy:${pa.accuracyScore} Fluency:${pa.fluencyScore} Completeness:${pa.completenessScore}`)
-
     return res.status(200).json({
       overallScore:      Math.round(pa.pronunciationScore  ?? 0),
       accuracyScore:     Math.round(pa.accuracyScore       ?? 0),
