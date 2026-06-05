@@ -23,8 +23,6 @@ export default async function handler(req, res) {
       ReferenceText: referenceText,
       GradingSystem: 'HundredMark',
       Granularity: 'Word',
-      EnableMiscue: false,
-      ScenarioId: '',
     })
     const config = Buffer.from(configJson)
       .toString('base64')
