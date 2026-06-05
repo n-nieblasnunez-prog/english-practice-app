@@ -98,6 +98,8 @@ export async function analyzeGrammar(text, mode = 'casual') {
 export async function assessPronunciation(audioBlob, referenceText) {
   // Convert to WAV PCM 16kHz mono (required by Azure)
   const wavBlob = await convertToWav(audioBlob)
+  console.log('WAV blob size:', wavBlob.size, 'bytes, original:', audioBlob.size, 'bytes')
+  if (wavBlob.size < 100) throw new Error(`WAV conversion produced empty audio (${wavBlob.size} bytes)`)
 
   // Convert WAV to base64 in chunks to avoid call stack overflow on large buffers
   const wavBuffer = await wavBlob.arrayBuffer()

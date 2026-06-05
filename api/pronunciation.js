@@ -40,7 +40,12 @@ export default async function handler(req, res) {
     const text = await response.text()
     if (!response.ok) return res.status(response.status).json({ error: text })
 
-    return res.status(200).json(JSON.parse(text))
+    const result = JSON.parse(text)
+    // Log for debugging — will appear in Vercel function logs
+    console.log('Azure response:', JSON.stringify(result).slice(0, 300))
+    console.log('Audio buffer size:', audioBuffer.length, 'bytes')
+
+    return res.status(200).json(result)
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
