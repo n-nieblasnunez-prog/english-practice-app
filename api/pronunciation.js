@@ -18,12 +18,19 @@ export default async function handler(req, res) {
     // Decode base64 audio back to binary Buffer
     const audioBuffer = Buffer.from(audioBase64, 'base64')
 
-    const config = Buffer.from(JSON.stringify({
+    // Azure requires base64url encoding (RFC 4648) for the Pronunciation-Assessment header
+    const configJson = JSON.stringify({
       ReferenceText: referenceText,
       GradingSystem: 'HundredMark',
       Granularity: 'Word',
-      EnableMiscue: true,
-    })).toString('base64')
+      EnableMiscue: false,
+      ScenarioId: '',
+    })
+    const config = Buffer.from(configJson)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
 
     const url = `https://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`
 
