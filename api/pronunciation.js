@@ -54,13 +54,32 @@ export default async function handler(req, res) {
     if (!response.ok) return res.status(response.status).json({ error: text })
 
     const result = JSON.parse(text)
-    const pa = result.NBest?.[0]?.PronunciationAssessment
+    const best = result.NBest?.[0] || {}
     console.log('Azure RecognitionStatus:', result.RecognitionStatus)
-    console.log('Azure PronunciationAssessment:', JSON.stringify(pa))
-    console.log('Azure NBest[0] keys:', Object.keys(result.NBest?.[0] || {}).join(', '))
-    console.log('Audio buffer size:', audioBuffer.length, 'bytes')
+    console.log('Azure NBest[0] keys:', Object.keys(best).join(', '))
+    console.log('Scores — PronScore:', best.PronScore, 'AccuracyScore:', best.AccuracyScore, 'FluencyScore:', best.FluencyScore)
 
-    return res.status(200).json(result)
+    // Normalize response — Azure returns scores directly on NBest[0], not in a nested object
+    const normalized = {
+      RecognitionStatus: result.RecognitionStatus,
+      NBest: [{
+        PronunciationAssessment: {
+          PronScore:          best.PronScore          ?? best.AccuracyScore ?? 0,
+          AccuracyScore:      best.AccuracyScore      ?? 0,
+          FluencyScore:       best.FluencyScore       ?? 0,
+          CompletenessScore:  best.CompletenessScore  ?? 0,
+        },
+        Words: (best.Words || []).map(w => ({
+          Word:  w.Word,
+          PronunciationAssessment: {
+            AccuracyScore: w.AccuracyScore ?? 0,
+            ErrorType:     w.ErrorType    ?? 'None',
+          }
+        }))
+      }]
+    }
+
+    return res.status(200).json(normalized)
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
