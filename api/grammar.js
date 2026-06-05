@@ -10,7 +10,7 @@ export default async function handler(req, res) {
     // Override model to a known-good, widely available model
     const body = {
       ...req.body,
-      model: 'claude-3-haiku-20240307',
+      model: 'claude-3-5-haiku-20241022',
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
