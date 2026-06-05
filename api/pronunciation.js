@@ -1,17 +1,29 @@
 // Vercel serverless function — proxies WAV audio to Azure Speech pronunciation assessment
+// bodyParser is disabled so we manually collect the raw binary stream.
+
+function collectBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    req.on('data', chunk => chunks.push(chunk))
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const azureKey = process.env.VITE_AZURE_SPEECH_KEY
   const region   = process.env.VITE_AZURE_SPEECH_REGION || 'centralus'
+
   if (!azureKey) return res.status(500).json({ error: 'Azure Speech key not configured on server' })
 
   try {
     const { referenceText } = req.query
     if (!referenceText) return res.status(400).json({ error: 'referenceText query param required' })
 
-    // req.body is a Buffer when bodyParser is disabled
-    const audioBuffer = req.body
+    // Manually read raw binary body (bodyParser is disabled)
+    const audioBuffer = await collectBody(req)
     if (!audioBuffer || audioBuffer.length === 0) {
       return res.status(400).json({ error: 'No audio data received' })
     }
@@ -44,10 +56,7 @@ export default async function handler(req, res) {
   }
 }
 
-// Disable default body parser so we get raw Buffer for binary audio data
+// Disable default body parser — required to receive raw binary audio
 export const config = {
-  api: {
-    bodyParser: false,
-    sizeLimit: '5mb',
-  }
+  api: { bodyParser: false }
 }
